@@ -1,0 +1,38 @@
+[tool.poetry]
+name = "hw-14-web"
+version = "0.1.0"
+description = ""
+authors = ["TarasSabat <tarsab25@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.111.0"
+uvicorn = {extras = ["standard"], version = "^0.29.0"}
+sqlalchemy = "^2.0.30"
+psycopg2 = "^2.9.9"
+psycopg2-binary = "^2.9.9"
+myapplication = "^0.1.0"
+pydantic-settings = "^2.2.1"
+alembic = "^1.13.1"
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+pyjwt = "^2.8.0"
+fastapi-mail = "^1.4.1"
+cloudinary = "^1.40.0"
+redis = "5.1.0b5"
+starlette = "0.37.2"
+sphinx = "^7.3.7"
+fastapi-limiter = "^0.1.6"
+asyncpg = "^0.29.0"
+libgravatar = "^1.0.4"
+pytest = "^8.2.2"
+
+[tool.poetry.group.dev.dependencies]
+sphinx = "^7.3.7"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
