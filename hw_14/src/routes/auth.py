@@ -1,21 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, status
 from fastapi.security import (
     OAuth2PasswordRequestForm,
     HTTPAuthorizationCredentials,
     HTTPBearer,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import status
 
+from src.conf import messages
 from src.database.db import get_db
 from src.schemas.user import UserSchema, TokenSchema, UserResponse, RequestEmail
 from src.repository import users as repositories_users
 from src.services.auth import auth_service
 from src.services.email import send_email
-
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -45,16 +41,12 @@ async def signup(
     """
     exist_user = await repositories_users.get_user_by_email(body.email, db)
     if exist_user:
-        logger.warning(
-            f"Attempt to create an account with existing email: {body.email}"
-        )
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Account already exists"
+            status_code=status.HTTP_409_CONFLICT, detail=messages.ACCOUNT_EXIST
         )
     body.password = auth_service.get_password_hash(body.password)
     new_user = await repositories_users.create_user(body, db)
     bt.add_task(send_email, new_user.email, new_user.username, str(request.base_url))
-    logger.info(f"New user created: {new_user.email}")
     return new_user
 
 
@@ -76,11 +68,12 @@ async def login(
     if not user or not auth_service.verify_password(body.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail=messages.INCORRECT_EMAIL_PASSWORD,
         )
     if not user.confirmed:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Email not confirmed"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=messages.EMAIL_NOT_CONFIRMED,
         )
     access_token = await auth_service.create_access_token(data={"sub": user.email})
     refresh_token = await auth_service.create_refresh_token(data={"sub": user.email})
@@ -112,10 +105,11 @@ async def refresh_token(
     token = credentials.credentials
     email = await auth_service.decode_refresh_token(token)
     user = await repositories_users.get_user_by_email(email, db)
-    if user.refresh_token != token:
+    if user is None or user.refresh_token != token:
         await repositories_users.update_token(user, None, db)
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=messages.INVALID_REFRESH_TOKEN,
         )
 
     access_token = await auth_service.create_access_token(data={"sub": email})
@@ -144,14 +138,12 @@ async def confirmed_email(token: str, db: AsyncSession = Depends(get_db)):
     email = await auth_service.get_email_from_token(token)
     user = await repositories_users.get_user_by_email(email, db)
     if user is None:
-        logger.error(f"Verification error for token: {token}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Verification error"
+            status_code=status.HTTP_400_BAD_REQUEST, detail=messages.VERIFICATION_ERROR
         )
     if user.confirmed:
         return {"message": "Your email is already confirmed"}
     await repositories_users.confirmed_email(email, db)
-    logger.info(f"Email confirmed for user: {email}")
     return {"message": "Email confirmed"}
 
 
@@ -178,7 +170,7 @@ async def request_email(
     """
     user = await repositories_users.get_user_by_email(body.email, db)
 
-    if user.confirmed:
+    if user and user.confirmed:
         return {"message": "Your email is already confirmed"}
     if user:
         background_tasks.add_task(

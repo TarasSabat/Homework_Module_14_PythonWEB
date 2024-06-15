@@ -11,7 +11,11 @@ from src.schemas.contact import ContactBase
 
 
 async def get_all_contacts(
-    skip: int, limit: int, db: AsyncSession, user: User
+    limit: int,
+    offset: int,
+    user: User,
+    session: AsyncSession,
+    # skip: int, limit: int, db: AsyncSession, user: User
 ) -> List[Contact]:
     """
     The get_contacts function returns a list of contacts for the user.
@@ -23,13 +27,18 @@ async def get_all_contacts(
     :return: A list of contact objects
     :doc-author: Trelent
     """
-    query = select(Contact).filter(Contact.user_id == user.id).offset(skip).limit(limit)
-    result = await db.execute(query)
+    query = (
+        select(Contact).filter(Contact.user_id == user.id).offset(offset).limit(limit)
+    )
+    result = await session.execute(query)
     return result.scalars().all()
 
 
 async def get_contact(
-    contact_id: int, db: AsyncSession, user: User
+    contact_id: int,
+    session: AsyncSession,
+    user: User,
+    # contact_id: int, db: AsyncSession, user: User
 ) -> Optional[Contact]:
     """
     The get_contact function returns a contact from the database.
@@ -41,7 +50,7 @@ async def get_contact(
     :doc-author: Trelent
     """
     query = select(Contact).filter(Contact.id == contact_id, Contact.user_id == user.id)
-    result = await db.execute(query)
+    result = await session.execute(query)
     return result.scalars().first()
 
 

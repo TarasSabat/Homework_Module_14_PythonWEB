@@ -1,71 +1,112 @@
-from unittest.mock import MagicMock
+import httpx
+import pytest
+from unittest.mock import Mock
 
+import pytest_asyncio
+from sqlalchemy import select
+
+from main import app
 from src.database.models import User
+from tests.conftest import TestingSessionLocal
+from src.conf import messages
 
 
-def test_create_user(client, user, monkeypatch):
-    mock_send_email = MagicMock()
+user_data = {
+    "username": "agent007",
+    "email": "agent007@gmail.com",
+    "password": "123456789",
+}
+
+
+def test_signup(client, monkeypatch):
+    mock_send_email = Mock()
     monkeypatch.setattr("src.routes.auth.send_email", mock_send_email)
-    response = client.post(
-        "/api/auth/signup",
-        json=user,
-    )
+    response = client.post("api/auth/signup", json=user_data)
     assert response.status_code == 201, response.text
     data = response.json()
-    assert data["user"]["email"] == user.get("email")
-    assert "id" in data["user"]
+    assert data["username"] == user_data["username"]
+    assert data["email"] == user_data["email"]
+    assert "password" not in data
+    assert "avatar" in data
 
 
-def test_repeat_create_user(client, user):
-    response = client.post(
-        "/api/auth/signup",
-        json=user,
-    )
+def test_repeat_signup(client, monkeypatch):
+    mock_send_email = Mock()
+    monkeypatch.setattr("src.routes.auth.send_email", mock_send_email)
+
+    # Перша реєстрація
+    response = client.post("api/auth/signup", json=user_data)
+    assert response.status_code == 201, response.text
+
+    # Повторна реєстрація
+    response = client.post("api/auth/signup", json=user_data)
     assert response.status_code == 409, response.text
     data = response.json()
-    assert data["detail"] == "Account already exists"
+    assert data["detail"] == messages.ACCOUNT_EXIST
 
 
-def test_login_user_not_confirmed(client, user):
+def test_not_confirmed_login(client):
     response = client.post(
-        "/api/auth/login",
-        data={"username": user.get("email"), "password": user.get("password")},
+        "api/auth/login",
+        data={
+            "username": user_data.get("email"),
+            "password": user_data.get("password"),
+        },
     )
     assert response.status_code == 401, response.text
     data = response.json()
-    assert data["detail"] == "Email not confirmed"
+    assert data["detail"] == messages.EMAIL_NOT_CONFIRMED
 
 
-def test_login_user(client, session, user):
-    current_user: User = (
-        session.query(User).filter(User.email == user.get("email")).first()
-    )
-    current_user.confirmed = True
-    session.commit()
+@pytest.mark.asyncio
+async def test_login(client):
+    async with TestingSessionLocal() as session:
+        current_user = await session.execute(
+            select(User).where(User.email == user_data.get("email"))
+        )
+        current_user = current_user.scalar_one_or_none()
+        if current_user:
+            current_user.confirmed = True
+            await session.commit()
+
     response = client.post(
-        "/api/auth/login",
-        data={"username": user.get("email"), "password": user.get("password")},
+        "api/auth/login",
+        data={
+            "username": user_data.get("email"),
+            "password": user_data.get("password"),
+        },
     )
     assert response.status_code == 200, response.text
     data = response.json()
-    assert data["token_type"] == "bearer"
+    assert "access_token" in data
+    assert "refresh_token" in data
+    assert "token_type" in data
 
 
-def test_login_wrong_password(client, user):
+def test_wrong_password_login(client):
     response = client.post(
-        "/api/auth/login",
-        data={"username": user.get("email"), "password": "password"},
+        "api/auth/login",
+        data={"username": user_data.get("email"), "password": "wrong_password"},
     )
     assert response.status_code == 401, response.text
     data = response.json()
-    assert data["detail"] == "Invalid password"
+    assert data["detail"] == messages.INCORRECT_EMAIL_PASSWORD
 
 
-def test_login_wrong_email(client, user):
+def test_wrong_email_login(client):
     response = client.post(
-        "/api/auth/login",
-        data={"username": "email", "password": user.get("password")},
+        "api/auth/login",
+        data={"username": "wrong_email", "password": user_data.get("password")},
     )
     assert response.status_code == 401, response.text
     data = response.json()
-    assert data["detail"] == "Invalid email"
+    assert data["detail"] == messages.INCORRECT_EMAIL_PASSWORD
+
+
+def test_validation_error_login(client):
+    response = client.post(
+        "api/auth/login", data={"password": user_data.get("password")}
+    )
+    assert response.status_code == 422, response.text
+    data = response.json()
+    assert "detail" in data
